@@ -3,6 +3,8 @@ import tensorflow as tf
 import os
 os.environ['TF_CPP_MIN_LOOG-LEVEL']='2'
 
+tf.app.flags
+
 def tf_demo1():
     """
     用TF实现一个简单的加法运算
