@@ -43,8 +43,7 @@ def linear_regression():
 
 def linear_regression2():
     """
-    TF实现线性回归
-    增加其它功能
+    TF实现线性回归：增加其它功能
     1、变量TensorBoard显示
     2、增加命名空间
     3、模型保存与加载

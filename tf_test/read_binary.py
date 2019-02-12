@@ -56,12 +56,12 @@ class Cifar(object):
         # 转换成TF格式，[height,weith,channels]
         image_trans = tf.transpose(image_reshape,[1,2,0])
         print("image_trans:\n", image_trans)
-        # 调整为float32,提高计算精度
-        image_cast = tf.cast(image_trans,tf.float32)
-        print("image_cast:\n", image_cast)
+        # 调整为float32,提高计算精度,加入这行时，读取时也需要进行转换，否则会出错的
+        #image_cast = tf.cast(image_trans,tf.float32)
+        # print("image_cast:\n", image_cast)
 
         # 批处理
-        label_batch,image_batch = tf.train.batch([label,image_cast],batch_size=100,num_threads=1,capacity=100)
+        label_batch,image_batch = tf.train.batch([label,image_trans],batch_size=100,num_threads=1,capacity=100)
         print("label_batch:\n", label_batch)
         print("image_batch:\n", image_batch)
 
@@ -133,10 +133,10 @@ class Cifar(object):
         # 形状调整
         image_reshaped = tf.reshape(image_decoded,[self.height,self.width,self.channels])
         # print("image_decoded:\n",image_decoded)
-        # print("image_reshaped:\n",image_reshaped)
+        print("image_reshaped:\n",image_reshaped)
 
         #3、放入批处理队列
-        label_batch, image_batch = tf.train.batch([label, image_reshaped], batch_size=100, num_threads=1, capacity=100)
+        label_batch,image_batch = tf.train.batch([label, image_reshaped], batch_size=100, num_threads=1, capacity=100)
 
         print("label_batch:\n", label_batch)
         print("image_batch:\n", image_batch)
@@ -149,17 +149,17 @@ class Cifar(object):
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             image_value,label_value = sess.run([image,label])
-            image_batch_value, label_batch_value  = sess.run([image_batch,label_batch])
+            image_batch_value, label_batch_value = sess.run([image_batch,label_batch])
 
-            # print("image_value:\n",image_value)
-            # print("label_value:\n",label_value)
+            print("image_value:\n",image_value)
+            print("label_value:\n",label_value)
 
             print("image_batch_value:\n",image_batch_value)
             print("label_batch_value:\n",label_batch_value)
 
             # 回收线程
             coord.request_stop()
-            #coord.join(threads)
+            coord.join(threads)
 
         return None
 
@@ -174,10 +174,10 @@ if __name__ == "__main__":
     # 实例化Cifar
     cifar = Cifar()
     # 读文件，解码，转换
-    #images,lebels = cifar.read_and_decode(file_list)
+    # images,lebels = cifar.read_and_decode(file_list)
 
     # 写入到TFRecords文件
-    #cifar.write_to_tfrecords(images,lebels)
+    # cifar.write_to_tfrecords(images,lebels)
 
     # 读取TFRecords文件
     cifar.read_tfrecords()
