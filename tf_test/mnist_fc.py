@@ -4,7 +4,7 @@ import  tensorflow as tf
 import os
 os.environ['TF_CPP_MIN_LOOG-LEVEL']='2'
 
-def mnist_test():
+def mnist_fc():
     """
     全连接网络实现手写数字识别
     :return:
@@ -53,4 +53,4 @@ def mnist_test():
     return None
 
 if __name__ == "__main__":
-    mnist_test()
+    mnist_fc()
