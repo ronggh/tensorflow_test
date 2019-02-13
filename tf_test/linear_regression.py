@@ -108,7 +108,7 @@ def linear_regression2():
 
             # 保存训练模型
             if i % 10 == 0:
-                saver.save(sess,"../model_checkpoint/my_linear.ckpt")
+                saver.save(sess,"../tf_out/model_checkpoint/linear/my_linear.ckpt")
 
     return None
 
@@ -140,5 +140,5 @@ def restore_model():
 
 if __name__ == "__main__":
     # linear_regression()
-    # linear_regression2()
-    restore_model()
+    linear_regression2()
+    # restore_model()

@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
 import tensorflow as tf
 
@@ -102,9 +103,12 @@ def cnn_model_fn(features, labels, mode):
         mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
 
-def main(unused_argv):
+if __name__ == "__main__":
     # Load training and eval data
-    mnist = tf.contrib.learn.datasets.load_dataset("mnist")
+    # download from  http://yann.lecun.com/exdb/mnist/
+    # mnist = tf.contrib.learn.datasets.load_dataset("mnist")
+    # 已下载，直接加载
+    mnist = input_data.read_data_sets("../mnist_data", one_hot=True)
     train_data = mnist.train.images  # Returns np.array
     train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
     eval_data = mnist.test.images  # Returns np.array
@@ -137,7 +141,3 @@ def main(unused_argv):
         x={"x": eval_data}, y=eval_labels, num_epochs=1, shuffle=False)
     eval_results = mnist_classifier.evaluate(input_fn=eval_input_fn)
     print(eval_results)
-
-
-if __name__ == "__main__":
-    tf.app.run()
