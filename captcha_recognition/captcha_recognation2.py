@@ -5,7 +5,7 @@ import os
 import numpy as np
 
 
-def read_pic(filenames):
+def read_pic_batch(filenames):
     """
     读取图片文件
     :return:
@@ -25,10 +25,48 @@ def read_pic(filenames):
     # print("decoded_image:\n",decoded_image)
 
     # 3. 加入批处理
-    filename_batch, image_batch = tf.train.batch([filename, decoded_image], batch_size=100, num_threads=2, capacity=100)
+    filename_batch, image_batch = tf.train.batch([filename, decoded_image], batch_size=100, num_threads=1, capacity=100)
 
-    return filename_batch, image_batch
+    # 开启会话
+    with tf.Session() as sess:
+        # 因为用到了队列，需要开启线程
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+        filename_value, image_value = sess.run([filename_batch, image_batch])
+        # print("filename_value:\n",filename_value)
+        # print("image_value:\n",image_value)
+        labels = parse_filenames_to_labels(filename_value)
+        # print(labels)
+        # labels转成one-hot编码
+        labels_value = tf.reshape(tf.one_hot(labels, depth=captcha_setting.ALL_CHAR_SET_LEN),
+                                  [-1, 4 * captcha_setting.ALL_CHAR_SET_LEN]).eval()
+
+        # 回收线程
+        coord.request_stop()
+        coord.join(threads)
+
+
+
+    return filename_value,image_value, labels_value
+
+def parse_filenames_to_chars(filenames):
+    """
+    解析文件名 ---> 校验码（标签）
+    NZPP_xxxxx.png ---> NZPP
+    :param filenames:
+    :return:
+    """
+    labels = []
+    for filename in filenames:
+        # print(filename)
+        # 取出4位的标签
+        chars = str(filename).split(os.path.sep)[-1].split("_")[0]
+        # print(chars)
+        labels.append(chars)
+
+    # print(labels)
+    return labels
 
 def parse_filenames_to_labels(filenames):
     """
@@ -74,13 +112,13 @@ def label_to_char(labels):
     # print("word_list:\n",word_list)
     return  word_list
 
-def create_weights(shape):
+def create_weights(shape,name=None):
     """
     生成权重初始化值
     :param shape:
     :return:
     """
-    return tf.Variable(initial_value=tf.random_normal(shape=shape, mean=0.0, stddev=0.1))
+    return tf.Variable(initial_value=tf.random_normal(shape=shape, mean=0.0, stddev=0.1),name=name)
 
 
 def create_cnn_model(x):
@@ -96,8 +134,9 @@ def create_cnn_model(x):
         # 1.1 卷积层：32个Filter，大小5*5，strides=1,padding="SAME"
         # 将x [None,784]进行形状转换成卷积函数要求的格式
 
-        filter_conv1 = create_weights(shape=[5, 5, 3, 32])
-        bias_conv1 = create_weights([32])
+        filter_conv1 = create_weights(shape=[5, 5, 3, 32],name="filter1")
+        bias_conv1 = create_weights([32],name="bias1")
+
         features_conv1 = tf.nn.conv2d(input=x, filter=filter_conv1, strides=[1, 1, 1, 1], padding="SAME") + bias_conv1
         # 1.2 激活函数
         relu_conv1 = tf.nn.relu(features_conv1)
@@ -109,8 +148,9 @@ def create_cnn_model(x):
         # 2.1 卷积层：64个Filter，大小5*5，strides=1,padding="SAME"
         # [None,captcha_setting.IMAGE_HEIGHT,captcha_setting.IMAGE_WIDTH,3]
         # -->[None,captcha_setting.IMAGE_HEIGHT/2,captcha_setting.IMAGE_WIDTH/2,32]
-        filter_conv2 = create_weights(shape=[5, 5, 32, 64])
-        bias_conv2 = create_weights([64])
+        filter_conv2 = create_weights(shape=[5, 5, 32, 64],name="filter2")
+        bias_conv2 = create_weights([64],name="bias2")
+
         features_conv2 = tf.nn.conv2d(input=pool_conv1, filter=filter_conv2, strides=[1, 1, 1, 1],
                                       padding="SAME") + bias_conv2
 
@@ -129,39 +169,45 @@ def create_cnn_model(x):
         height = tf.cast(captcha_setting.IMAGE_HEIGHT / 4,tf.int32)
         width = tf.cast(captcha_setting.IMAGE_WIDTH / 4,tf.int32)
         x_fc = tf.reshape(pool_conv2, shape=[-1, height * width * 64])
-        weights_fc = create_weights(shape=[height * width * 64, 4 * 36])
-        bias_fc = create_weights(shape=[4 * 36])
+        weights_fc = create_weights(shape=[height * width * 64, 4 * 36],name="weights_fc")
+        bias_fc = create_weights(shape=[4 * 36],name="bias_fc")
+
         y_predict = tf.matmul(x_fc, weights_fc) + bias_fc
+
+    # 收集变量,在TensroBoard中显示
+    tf.summary.histogram("filter1", filter_conv1)
+    tf.summary.histogram("bias1", bias_conv1)
+
+    tf.summary.histogram("filter2", filter_conv2)
+    tf.summary.histogram("bias2", bias_conv2)
+
+    tf.summary.histogram("weights_fc", weights_fc)
+    tf.summary.histogram("bias_fc", bias_fc)
 
     return y_predict
 
-def prepare_data(filenames):
+
+def train_model(filenames):
     """
-    读取图片，返回要求的数据格式
-    :param filenames:
+    训练模型
     :return:
     """
     with tf.variable_scope("prepartion_data"):
         # 读取图片文件
         # 使用glob获取文件名列表（也可以用os)
-        filename_batch, image_batch = read_pic(filenames)
-        # print("Ok:\n",filenames)
-
-
-    return filename_batch, image_batch
-
-if __name__ == "__main__":
-    # 读取文件
-    filenames = glob.glob(captcha_setting.TRAIN_DATASET_PATH + "/*.png")
-    filename_batch, image_batch = prepare_data(filenames)
+        # 读取文件
+        filename_value, image_value,labels_value = read_pic_batch(filenames)
 
     with tf.variable_scope("create_model"):
         # 准备数据,彩色图片，3个通道
-        x = tf.placeholder(dtype=tf.float32, shape=[None, captcha_setting.IMAGE_HEIGHT, captcha_setting.IMAGE_WIDTH, 3])
+        # x = tf.placeholder(dtype=tf.float32, shape=[None, captcha_setting.IMAGE_HEIGHT, captcha_setting.IMAGE_WIDTH, 3])
+        x = image_value
         # 校校码，4个长度，0-9以及A-Z
-        y_true = tf.placeholder(dtype=tf.float32, shape=[None, 4 * captcha_setting.ALL_CHAR_SET_LEN])
+        # y_true = tf.placeholder(dtype=tf.float32, shape=[None, 4 * captcha_setting.ALL_CHAR_SET_LEN])
+        y_true = labels_value
         # 构造模型
         y_predict = create_cnn_model(x)
+        # print(y_predict)
     with tf.variable_scope("def_loss"):
         # 构造损失函数
         loss_list = tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_predict)
@@ -176,58 +222,90 @@ if __name__ == "__main__":
         equal_list = tf.reduce_all(
             tf.equal(tf.argmax(tf.reshape(y_true, shape=[-1, 4, 36]), axis=2),
                      tf.argmax(tf.reshape(y_predict, shape=[-1, 4, 36]), axis=2)), axis=1)
-        accuracy = tf.reduce_mean(tf.cast(equal_list,tf.float32))
+        accuracy = tf.reduce_mean(tf.cast(equal_list, tf.float32))
 
     # 创建Saver对象
     saver = tf.train.Saver()
 
+    # 合并变量
+    merged = tf.summary.merge_all()
+
+    # 开启会话
+    with tf.Session() as sess:
+        # 开始训练
+        # 初始化变量
+        init = tf.global_variables_initializer()
+        sess.run(init)
+
+        # 创建事件文件
+        file_writer = tf.summary.FileWriter("../tf_out/captcha", graph=sess.graph)
+
+        for i in range(1000):
+            _, loss_value, accuracy_value = sess.run([optimizer, loss, accuracy])
+            print("第%d次训练，损失为：%.2f,准确率：%.2f%%" % ((i + 1), loss_value, accuracy_value * 100))
+
+            # 每次迭代需要收集变量
+            summary = sess.run(merged)
+            # 每次迭代后的变量写入事件文件
+            file_writer.add_summary(summary, i)
+
+            # 保存模型，退出
+            if accuracy_value >= 1.0:
+
+                saver.save(sess, "../tf_out/model_checkpoint/captcha/captcha.ckpt")
+                break
+
+
+    return None
+
+def test_pic(filenames):
+    """
+    测试模型
+    :param filename:
+    :return:
+    """
+
+    #
+    filename_value, image_value, labels_value = read_pic_batch(filenames)
+    y_predict = create_cnn_model(image_value)
+
+    with tf.variable_scope("accuracy"):
+        # 计算准确率
+        prediction = tf.argmax(tf.reshape(y_predict, shape=[-1, 4, 36]), axis=2)
+        equal_list = tf.reduce_all(
+            tf.equal(tf.argmax(tf.reshape(labels_value, shape=[-1, 4, 36]), axis=2),
+                     tf.argmax(tf.reshape(y_predict, shape=[-1, 4, 36]), axis=2)), axis=1)
+        accuracy = tf.reduce_mean(tf.cast(equal_list,tf.float32))
+
+    with tf.Session() as sess:
+        # 初始化变量
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        # 创建Saver对象,从存储模型中恢复参数值
+        saver = tf.train.import_meta_graph('../tf_out/model_checkpoint/captcha/captcha.ckpt.meta')
+        saver.restore(sess, tf.train.latest_checkpoint("../tf_out/model_checkpoint/captcha/"))
+
+        filter1 = sess.run("create_model/conv-1/filter1:0")
+        print("filter1:\n",filter1)
+        prediction_value,accuracy_value = sess.run([prediction,accuracy])
+        predict_text = label_to_char(prediction_value)
+        print("Predict Label:\n",predict_text)
+        label_true = parse_filenames_to_chars(filename_value)
+        print("True Label:\n",label_true)
+        print("accuracy_value:\n",accuracy_value)
+
+    return None
+
+if __name__ == "__main__":
     # 是否为训练模式
     is_training = True
     # is_training = False
 
-    # 开启会话
-    with tf.Session() as sess:
-        # 因为用到了队列，需要开启线程
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+    # 开始训练
+    if is_training:
+        train_model(glob.glob(captcha_setting.TRAIN_DATASET_PATH + "/*.png"))
 
+    # 从保存的目录中恢复模型
+    else:
+        test_pic(glob.glob(captcha_setting.TRAIN_DATASET_PATH + "/0A2J*.png"))
 
-        filename_value, image_value = sess.run([filename_batch, image_batch])
-        # print("filename_value:\n",filename_value)
-        # print("image_value:\n",image_value)
-        labels = parse_filenames_to_labels(filename_value)
-        # print(labels)
-        # labels转成one-hot编码
-        labels_value = tf.reshape(tf.one_hot(labels, depth=captcha_setting.ALL_CHAR_SET_LEN), [-1, 4 * captcha_setting.ALL_CHAR_SET_LEN]).eval()
-
-        # 开始训练
-        if is_training:
-            # 初始化变量
-            init = tf.global_variables_initializer()
-            sess.run(init)
-
-            for i in range(1000):
-                _,loss_value,accuracy_value = sess.run([optimizer,loss,accuracy],feed_dict={x:image_value,y_true:labels_value})
-                print("第%d次训练，损失为：%.2f,准确率：%.2f%%" % ((i+1),loss_value,accuracy_value*100))
-
-                # 保存模型，退出
-                if accuracy_value >= 1.0:
-                    saver.save(sess, "../tf_out/model_checkpoint/captcha/captcha.ckpt")
-                    break
-
-        # 从保存的目录中恢复模型
-        else:
-            saver.restore(sess=sess,save_path="../tf_out/model_checkpoint/captcha/captcha.ckpt")
-
-            # 识别
-            prediction_value, accuracy_value = sess.run([prediction, accuracy],
-                                                     feed_dict={x: image_value, y_true: labels_value})
-            char_list = label_to_char(prediction_value)
-
-
-            print("识别结果：prediction_value:\n", char_list)
-            print("识别正确率：accuracy_value:\n", accuracy_value)
-
-        # 回收线程
-        coord.request_stop()
-        coord.join(threads)
