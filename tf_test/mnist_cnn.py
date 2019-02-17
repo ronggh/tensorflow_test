@@ -29,6 +29,7 @@ def create_cnn_model(x):
         filter_conv1 = create_weights(shape=[5,5,1,32])
         bias_conv1 = create_weights([32])
         features_conv1 = tf.nn.conv2d(input=input_x,filter=filter_conv1,strides=[1,1,1,1],padding="SAME") + bias_conv1
+
         # 1.2 激活函数
         relu_conv1 = tf.nn.relu(features_conv1)
         # 1.3 池化层:大小2*2，strides=2
@@ -58,25 +59,37 @@ def create_cnn_model(x):
 
     return y_predict
 
+
+
+
 def mnist_cnn():
     """
     CNN实现手写数字识别
     :return:
     """
+
+
     # 读取数据
     with tf.variable_scope("mnist_data"):
-        path = "../mnist_data"
-        mnist = input_data.read_data_sets(path,one_hot=True)
+        # 载入数据集
+        mnist = input_data.read_data_sets("../mnist_data",one_hot=True)
 
+        # 每个批次的大小
+        batch_size = 100
+        # 计算一共有多少个批次
+        n_batch = mnist.train.num_examples // batch_size
+
+        # 定义三个占位符，x:图片数据，y_true:真实分类标签数据，
         # 图片28*28 = 784
         x = tf.placeholder(dtype=tf.float32,shape=[None,784])
         y_true = tf.placeholder(dtype=tf.float32,shape=[None,10])
+
 
     # 构造模型
     with tf.variable_scope("cnn_model"):
         y_predict = create_cnn_model(x)
 
-    # 构造损失函数
+    # 构造损失函数：交叉熵
     with tf.variable_scope("softmax_cross_entropy"):
         diff = tf.nn.softmax_cross_entropy_with_logits(labels=y_true,logits=y_predict)
         loss = tf.reduce_mean(diff)
@@ -101,17 +114,26 @@ def mnist_cnn():
     # 开启会话
     with tf.Session() as  sess:
         sess.run(init)
-        # 填充数据
-        image,label = mnist.train.next_batch(100)
-        print("训练前损失：%f\n" % sess.run(loss,feed_dict={x:image,y_true:label}))
 
         # 开始训练
-        for i in range(3000):
-            _,loss_value,accuracy_value = sess.run([optimizer,loss,accuracy],feed_dict={x:image,y_true:label})
-            print("第%d次训练的损失：%f，准确率：%f\n" % ((i+1),loss_value,accuracy_value))
+        for epoch in range(10):
+            for batch in range(n_batch):
+                print("正在取...%d...批数据，送到网络中训练" % (batch+1))
+                # 填充数据
+                image,label = mnist.train.next_batch(batch_size)
+                sess.run([optimizer, loss, accuracy], feed_dict={x: image, y_true: label})
 
+            # 使用测试集，测试训练结果的准确率
+            _, loss_value, accuracy_value = sess.run([optimizer, loss, accuracy], feed_dict={x: mnist.test.images, y_true: mnist.test.labels})
+            print("第%d批次训练的损失：%.4f，准确率：%.4f%%\n" % ((epoch + 1), loss_value, accuracy_value * 100))
+
+        # 使用测试集，测试训练好的模型准确率
+        acc_value = sess.run(accuracy, feed_dict={x: mnist.test.images, y_true: mnist.test.labels})
+
+        print("在测试集上的准确率为：%.4f%%\n" % (acc_value * 100))
 
     return None
 
 if __name__ == "__main__":
     mnist_cnn()
+
