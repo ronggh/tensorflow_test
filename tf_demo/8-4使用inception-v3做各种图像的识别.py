@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 
 class NodeLookup(object):
     def __init__(self):  
-        label_lookup_path = 'inception_model/imagenet_2012_challenge_label_map_proto.pbtxt'   
-        uid_lookup_path = 'inception_model/imagenet_synset_to_human_label_map.txt'
+        label_lookup_path = '../tf_in/inception_model/imagenet_2012_challenge_label_map_proto.pbtxt'
+        uid_lookup_path = '../tf_in/inception_model/imagenet_synset_to_human_label_map.txt'
         self.node_lookup = self.load(label_lookup_path, uid_lookup_path)
 
     def load(self, label_lookup_path, uid_lookup_path):
@@ -38,7 +38,7 @@ class NodeLookup(object):
             if line.startswith('  target_class_string:'):
                 #获取编号字符串n********
                 target_class_string = line.split(': ')[1]
-                #保存分类编号1-1000与编号字符串n********映射关系
+                #保存分类编号1-1000与编号字符串n********映射关系,[1:-2]，去除掉两边的双引号
                 node_id_to_uid[target_class] = target_class_string[1:-2]
 
         #建立分类编号1-1000对应分类名称的映射关系
@@ -58,7 +58,7 @@ class NodeLookup(object):
 
 
 #创建一个图来存放google训练好的模型
-with tf.gfile.FastGFile('inception_model/classify_image_graph_def.pb', 'rb') as f:
+with tf.gfile.FastGFile('../tf_in/inception_model/classify_image_graph_def.pb', 'rb') as f:
     graph_def = tf.GraphDef()
     graph_def.ParseFromString(f.read())
     tf.import_graph_def(graph_def, name='')
@@ -66,8 +66,8 @@ with tf.gfile.FastGFile('inception_model/classify_image_graph_def.pb', 'rb') as 
 
 with tf.Session() as sess:
     softmax_tensor = sess.graph.get_tensor_by_name('softmax:0')
-    #遍历目录
-    for root,dirs,files in os.walk('images/'):
+    #遍历目录,目录下存放图片，可以是任意的图片jpg图片
+    for root,dirs,files in os.walk('../tf_in/dog/'):
         for file in files:
             #载入图片
             image_data = tf.gfile.FastGFile(os.path.join(root,file), 'rb').read()
@@ -83,7 +83,7 @@ with tf.Session() as sess:
             plt.axis('off')
             plt.show()
 
-            #排序
+            #排序，取概率最大的前5个
             top_k = predictions.argsort()[-5:][::-1]
             node_lookup = NodeLookup()
             for node_id in top_k:     
@@ -91,5 +91,5 @@ with tf.Session() as sess:
                 human_string = node_lookup.id_to_string(node_id)
                 #获取该分类的置信度
                 score = predictions[node_id]
-                print('%s (score = %.5f)' % (human_string, score))
+                print('%s (score = %.2f%%)' % (human_string, score*100))
             print()
